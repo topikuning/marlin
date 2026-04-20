@@ -39,12 +39,12 @@ class UserRole(str, enum.Enum):
     VIEWER     = "viewer"
 
 class WorkCategory(str, enum.Enum):
-    PERSIAPAN   = "persiapan"
-    STRUKTURAL  = "struktural"
+    PERSIAPAN    = "persiapan"
+    STRUKTURAL   = "struktural"
     ARSITEKTURAL = "arsitektural"
-    MEP         = "mep"
-    SITE_WORK   = "site_work"
-    KHUSUS      = "khusus"
+    MEP          = "mep"
+    SITE_WORK    = "site_work"
+    KHUSUS       = "khusus"
 
 
 # ─── USER ─────────────────────────────────────────────────────────────────────
@@ -86,15 +86,15 @@ class MasterWorkCode(Base):
 class Company(Base):
     __tablename__ = "companies"
 
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name            = Column(String(255), nullable=False)
-    npwp            = Column(String(30), unique=True)
-    address         = Column(Text)
-    contact_person  = Column(String(255))
-    phone           = Column(String(20))
-    email           = Column(String(255))
-    is_active       = Column(Boolean, default=True)
-    created_at      = Column(DateTime, default=datetime.utcnow)
+    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name           = Column(String(255), nullable=False)
+    npwp           = Column(String(30), unique=True)
+    address        = Column(Text)
+    contact_person = Column(String(255))
+    phone          = Column(String(20))
+    email          = Column(String(255))
+    is_active      = Column(Boolean, default=True)
+    created_at     = Column(DateTime, default=datetime.utcnow)
 
     contracts = relationship("Contract", back_populates="company")
 
@@ -106,7 +106,7 @@ class PPK(Base):
 
     id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name       = Column(String(255), nullable=False)
-    nip        = Column(String(30), unique=True)
+    nip        = Column(String(30), unique=True, nullable=True)
     jabatan    = Column(String(255))
     phone      = Column(String(20))
     email      = Column(String(255))
@@ -122,28 +122,29 @@ class PPK(Base):
 class Contract(Base):
     __tablename__ = "contracts"
 
-    id                    = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id            = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    ppk_id                = Column(UUID(as_uuid=True), ForeignKey("ppk.id"), nullable=False)
-    contract_number       = Column(String(100), unique=True, nullable=False, index=True)
-    contract_name         = Column(String(500), nullable=False)
-    fiscal_year           = Column(Integer, nullable=False)
-    start_date            = Column(Date, nullable=False)
-    end_date              = Column(Date, nullable=False)
-    duration_days         = Column(Integer, nullable=False)
-    original_duration_days = Column(Integer)          # Durasi sebelum addendum perpanjangan
-    original_value        = Column(Numeric(18, 2), nullable=False)
-    current_value         = Column(Numeric(18, 2), nullable=False)
-    status                = Column(Enum(ContractStatus), default=ContractStatus.ACTIVE)
-    province              = Column(String(100))       # Provinsi (denormalisasi dari location)
-    city                  = Column(String(100))       # Kota/Kab utama kontrak
-    description           = Column(Text)
-    created_at            = Column(DateTime, default=datetime.utcnow)
-    updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id                     = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id             = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    ppk_id                 = Column(UUID(as_uuid=True), ForeignKey("ppk.id"), nullable=False)
+    contract_number        = Column(String(100), unique=True, nullable=False, index=True)
+    contract_name          = Column(String(500), nullable=False)
+    fiscal_year            = Column(Integer, nullable=False)
+    start_date             = Column(Date, nullable=False)
+    end_date               = Column(Date, nullable=False)
+    duration_days          = Column(Integer, nullable=False)
+    original_duration_days = Column(Integer)
+    original_value         = Column(Numeric(18, 2), nullable=False)
+    current_value          = Column(Numeric(18, 2), nullable=False)
+    status                 = Column(Enum(ContractStatus), default=ContractStatus.ACTIVE)
+    province               = Column(String(100))
+    city                   = Column(String(100))
+    description            = Column(Text)
+    created_at             = Column(DateTime, default=datetime.utcnow)
+    updated_at             = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company        = relationship("Company", back_populates="contracts")
     ppk            = relationship("PPK", back_populates="contracts")
-    locations      = relationship("Location", back_populates="contract", cascade="all, delete-orphan")
+    locations      = relationship("Location", back_populates="contract",
+                                  cascade="all, delete-orphan")
     addenda        = relationship("ContractAddendum", back_populates="contract",
                                   order_by="ContractAddendum.effective_date")
     weekly_reports = relationship("WeeklyReport", back_populates="contract")
@@ -190,7 +191,8 @@ class Location(Base):
     created_at    = Column(DateTime, default=datetime.utcnow)
 
     contract   = relationship("Contract", back_populates="locations")
-    facilities = relationship("Facility", back_populates="location", cascade="all, delete-orphan")
+    facilities = relationship("Facility", back_populates="location",
+                               cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_location_city", "city"),
@@ -201,7 +203,7 @@ class Location(Base):
 # ─── FACILITY ─────────────────────────────────────────────────────────────────
 
 class Facility(Base):
-    """Satu lokasi bisa punya banyak fasilitas: gudang beku, pabrik es, kios, dst."""
+    """Satu lokasi bisa punya banyak fasilitas dengan BOQ masing-masing."""
     __tablename__ = "facilities"
 
     id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -211,13 +213,14 @@ class Facility(Base):
     display_order   = Column(Integer, default=0)
     total_value     = Column(Numeric(18, 2), default=0)
     notes           = Column(Text)
-    boq_imported_at = Column(DateTime)               # Kapan BOQ terakhir di-import
-    boq_source_file = Column(String(500))            # Nama file Excel sumber BOQ
+    boq_imported_at = Column(DateTime)
+    boq_source_file = Column(String(500))
     is_active       = Column(Boolean, default=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
     location  = relationship("Location", back_populates="facilities")
-    boq_items = relationship("BOQItem", back_populates="facility", cascade="all, delete-orphan")
+    boq_items = relationship("BOQItem", back_populates="facility",
+                              cascade="all, delete-orphan")
 
 
 # ─── BOQ ITEM ─────────────────────────────────────────────────────────────────
@@ -230,47 +233,43 @@ class BOQItem(Base):
     facility_id      = Column(UUID(as_uuid=True), ForeignKey("facilities.id"), nullable=False)
     master_work_code = Column(String(30), ForeignKey("master_work_codes.code"), nullable=True)
 
-    # Data asli dari dokumen BOQ
-    original_code = Column(String(50))    # Nomor item asli: "1", "2.1", "III.A.1"
-    parent_code   = Column(String(50))    # Untuk hierarki item
-    level         = Column(Integer, default=1)  # 0=section header, 1=item, 2=subitem
-    sort_order    = Column(Integer, default=0)  # Urutan tampil sesuai dokumen asli
+    original_code = Column(String(50))
+    parent_code   = Column(String(50))
+    level         = Column(Integer, default=1)   # 0=section header, 1=item, 2=subitem
+    sort_order    = Column(Integer, default=0)
     description   = Column(Text, nullable=False)
     unit          = Column(String(30))
     volume        = Column(Numeric(18, 4), default=0)
     unit_price    = Column(Numeric(18, 2), default=0)
     total_price   = Column(Numeric(18, 2), default=0)
-    weight_pct    = Column(Numeric(10, 8), default=0)  # Desimal: 0.0367 = 3.67%
+    weight_pct    = Column(Numeric(10, 8), default=0)  # desimal: 0.0367 = 3.67%
 
-    # Jadwal rencana
-    planned_start_week    = Column(Integer)
+    planned_start_week     = Column(Integer)
     planned_duration_weeks = Column(Integer)
-    planned_end_week      = Column(Integer)
+    planned_end_week       = Column(Integer)
 
-    # Untuk format BOQ Mataram: sub-analisa harga satuan
-    # Contoh: [{"uraian": "Mandor", "koef": 0.05, "satuan": "OH", "harga": 150000}]
+    # Sub-analisa harga satuan (format Mataram)
+    # contoh: [{"uraian":"Mandor","koef":0.05,"satuan":"OH","harga":150000}]
     analysis_items = Column(JSONB)
+    notes          = Column(Text)
 
-    notes = Column(Text)
-
-    # Versioning addendum
     version          = Column(Integer, default=1)
     is_active        = Column(Boolean, default=True)
-    is_addendum_item = Column(Boolean, default=False)  # True = item baru dari addendum
+    is_addendum_item = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    facility      = relationship("Facility", back_populates="boq_items")
-    master_work   = relationship("MasterWorkCode", back_populates="boq_items")
-    versions      = relationship("BOQItemVersion", back_populates="boq_item",
-                                 order_by="BOQItemVersion.version_number")
+    facility         = relationship("Facility", back_populates="boq_items")
+    master_work      = relationship("MasterWorkCode", back_populates="boq_items")
+    versions         = relationship("BOQItemVersion", back_populates="boq_item",
+                                    order_by="BOQItemVersion.version_number")
     progress_entries = relationship("WeeklyProgressItem", back_populates="boq_item")
 
     __table_args__ = (
-        Index("idx_boq_facility", "facility_id"),
-        Index("idx_boq_master_code", "master_work_code"),
-        Index("idx_boq_active", "is_active"),
+        Index("idx_boq_facility",     "facility_id"),
+        Index("idx_boq_master_code",  "master_work_code"),
+        Index("idx_boq_active",       "is_active"),
     )
 
 
@@ -280,27 +279,27 @@ class BOQItemVersion(Base):
     """Riwayat perubahan BOQ akibat addendum. Histori tidak pernah dihapus."""
     __tablename__ = "boq_item_versions"
 
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    boq_item_id = Column(UUID(as_uuid=True), ForeignKey("boq_items.id"), nullable=False)
-    addendum_id = Column(UUID(as_uuid=True), ForeignKey("contract_addenda.id"), nullable=False)
+    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    boq_item_id    = Column(UUID(as_uuid=True), ForeignKey("boq_items.id"), nullable=False)
+    addendum_id    = Column(UUID(as_uuid=True), ForeignKey("contract_addenda.id"), nullable=False)
     version_number = Column(Integer, nullable=False)
 
-    old_description          = Column(Text)
-    old_volume               = Column(Numeric(18, 4))
-    old_unit_price           = Column(Numeric(18, 2))
-    old_total_price          = Column(Numeric(18, 2))
-    old_weight_pct           = Column(Numeric(10, 8))
-    old_planned_start_week   = Column(Integer)
+    old_description            = Column(Text)
+    old_volume                 = Column(Numeric(18, 4))
+    old_unit_price             = Column(Numeric(18, 2))
+    old_total_price            = Column(Numeric(18, 2))
+    old_weight_pct             = Column(Numeric(10, 8))
+    old_planned_start_week     = Column(Integer)
     old_planned_duration_weeks = Column(Integer)
-    old_is_active            = Column(Boolean)
+    old_is_active              = Column(Boolean)
 
-    new_volume               = Column(Numeric(18, 4))
-    new_unit_price           = Column(Numeric(18, 2))
-    new_total_price          = Column(Numeric(18, 2))
-    new_weight_pct           = Column(Numeric(10, 8))
-    new_planned_start_week   = Column(Integer)
+    new_volume                 = Column(Numeric(18, 4))
+    new_unit_price             = Column(Numeric(18, 2))
+    new_total_price            = Column(Numeric(18, 2))
+    new_weight_pct             = Column(Numeric(10, 8))
+    new_planned_start_week     = Column(Integer)
     new_planned_duration_weeks = Column(Integer)
-    new_is_active            = Column(Boolean)
+    new_is_active              = Column(Boolean)
 
     change_reason = Column(Text)
     changed_at    = Column(DateTime, default=datetime.utcnow)
@@ -315,9 +314,9 @@ class WeeklyReport(Base):
     """Laporan mingguan per kontrak. Bisa diisi manual atau di-import dari Excel."""
     __tablename__ = "weekly_reports"
 
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    contract_id = Column(UUID(as_uuid=True), ForeignKey("contracts.id"), nullable=False)
-    week_number = Column(Integer, nullable=False)
+    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contract_id  = Column(UUID(as_uuid=True), ForeignKey("contracts.id"), nullable=False)
+    week_number  = Column(Integer, nullable=False)
     period_start = Column(Date, nullable=False)
     period_end   = Column(Date, nullable=False)
     report_date  = Column(Date)
@@ -333,8 +332,8 @@ class WeeklyReport(Base):
     days_remaining = Column(Integer, default=0)
     spi            = Column(Numeric(8, 4))
 
-    manpower_count    = Column(Integer, default=0)
-    manpower_skilled  = Column(Integer, default=0)
+    manpower_count     = Column(Integer, default=0)
+    manpower_skilled   = Column(Integer, default=0)
     manpower_unskilled = Column(Integer, default=0)
 
     rain_days = Column(Integer, default=0)
@@ -342,7 +341,7 @@ class WeeklyReport(Base):
     solutions = Column(Text)
 
     submitted_by    = Column(String(255))
-    import_source   = Column(String(50), default="manual")  # manual | excel_import | api
+    import_source   = Column(String(50), default="manual")
     source_filename = Column(String(500))
     is_locked       = Column(Boolean, default=False)
     created_at      = Column(DateTime, default=datetime.utcnow)
@@ -350,7 +349,7 @@ class WeeklyReport(Base):
 
     contract       = relationship("Contract", back_populates="weekly_reports")
     progress_items = relationship("WeeklyProgressItem", back_populates="weekly_report",
-                                  cascade="all, delete-orphan")
+                                   cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_report_contract_week", "contract_id", "week_number", unique=True),
@@ -367,11 +366,11 @@ class WeeklyProgressItem(Base):
     weekly_report_id = Column(UUID(as_uuid=True), ForeignKey("weekly_reports.id"), nullable=False)
     boq_item_id      = Column(UUID(as_uuid=True), ForeignKey("boq_items.id"), nullable=False)
 
-    volume_this_week       = Column(Numeric(18, 4), default=0)
-    volume_cumulative      = Column(Numeric(18, 4), default=0)
-    progress_this_week_pct = Column(Numeric(10, 8), default=0)
+    volume_this_week        = Column(Numeric(18, 4), default=0)
+    volume_cumulative       = Column(Numeric(18, 4), default=0)
+    progress_this_week_pct  = Column(Numeric(10, 8), default=0)
     progress_cumulative_pct = Column(Numeric(10, 8), default=0)
-    weighted_progress_pct  = Column(Numeric(10, 8), default=0)
+    weighted_progress_pct   = Column(Numeric(10, 8), default=0)
     notes = Column(Text)
 
     weekly_report = relationship("WeeklyReport", back_populates="progress_items")
@@ -390,7 +389,7 @@ class EarlyWarning(Base):
     id               = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     contract_id      = Column(UUID(as_uuid=True), ForeignKey("contracts.id"), nullable=False)
     weekly_report_id = Column(UUID(as_uuid=True), ForeignKey("weekly_reports.id"), nullable=True)
-    location_id      = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
+    location_id      = Column(UUID(as_uuid=True), ForeignKey("locations.id"),  nullable=True)
     facility_id      = Column(UUID(as_uuid=True), ForeignKey("facilities.id"), nullable=True)
 
     warning_type    = Column(String(50), nullable=False)
@@ -449,22 +448,13 @@ class BOQExcelTemplate(Base):
     id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     template_name = Column(String(100), nullable=False, unique=True)
     description   = Column(Text)
-
-    # Mapping kolom — contoh:
-    # {"nomor":0,"uraian":1,"satuan":3,"volume":4,"harga_satuan":5,
-    #  "total_harga":6,"bobot":7,"header_row":4,"data_start_row":5}
     column_mapping  = Column(JSONB, nullable=False)
-
-    # Keywords di baris header untuk auto-detect format ini
     header_keywords = Column(JSONB)
-
-    # Keywords di kolom uraian yang harus di-skip
     skip_keywords   = Column(JSONB)
-
-    sample_file = Column(String(500))
-    is_active   = Column(Boolean, default=True)
-    created_by  = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at  = Column(DateTime, default=datetime.utcnow)
-    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    sample_file     = Column(String(500))
+    is_active       = Column(Boolean, default=True)
+    created_by      = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at      = Column(DateTime, default=datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     creator = relationship("User")
