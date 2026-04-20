@@ -1,0 +1,19 @@
+# ─── DATABASE ─────────────────────────────────────────────────────────────────
+# Local development:
+DATABASE_URL=postgresql://knmp_user:knmp_secure_password@localhost:5432/marlin_db
+
+# Docker (otomatis diisi docker-compose):
+# DATABASE_URL=postgresql://knmp_user:${DB_PASSWORD}@db:5432/marlin_db
+
+# Railway / Supabase (cloud):
+# DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
+
+# ─── SECURITY ─────────────────────────────────────────────────────────────────
+# Generate: python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY=your-super-secret-key-minimum-32-characters-CHANGE-THIS
+
+# ─── APP ──────────────────────────────────────────────────────────────────────
+DEBUG=false
+
+# ─── DOCKER ONLY ──────────────────────────────────────────────────────────────
+DB_PASSWORD=knmp_secure_password

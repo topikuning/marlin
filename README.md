@@ -1,218 +1,93 @@
-# KNMP Monitor — Sistem Monitoring Konstruksi Multi-Lokasi
+# MARLIN
+## Monitoring, Analysis, Reporting & Learning for Infrastructure Network
+### Sistem Monitoring Konstruksi Multi-Lokasi — v2.0
 
-Aplikasi web untuk monitoring progress konstruksi 200+ lokasi proyek Kampung Nelayan Merah Putih.
+---
 
 ## Fitur Utama
 - ✅ Dashboard monitoring multi-kontrak dengan KPI real-time
-- ✅ Kurva S interaktif (Planned vs Realisasi + Deviasi)
-- ✅ Import laporan mingguan dari file Excel konsultan
+- ✅ Kurva S interaktif (Planned vs Realisasi + Deviasi + Forecast)
+- ✅ Import BOQ dari Excel (adaptif untuk berbagai format)
+- ✅ Import laporan mingguan dari Excel konsultan
 - ✅ Input laporan manual
-- ✅ Early Warning System (deviasi, SPI, rasio waktu)
+- ✅ Early Warning System (deviasi, SPI, rasio waktu, no-report)
 - ✅ Manajemen kontrak, lokasi, fasilitas, BOQ
-- ✅ Dukungan addendum / CCO dengan versioning BOQ
-- ✅ Master Work Code untuk normalisasi BOQ lintas proyek
+- ✅ Addendum / CCO dengan versioning BOQ lengkap
+- ✅ Master Work Code — normalisasi BOQ lintas proyek
+- ✅ BOQ Excel Templates — simpan format per kontraktor/daerah
 
 ---
 
-## CARA MENJALANKAN (3 Metode)
+## CARA MENJALANKAN
 
----
-
-### METODE A — Local Development (Paling Mudah, untuk Testing)
+### METODE A — Local Development
 
 **Prasyarat:** Python 3.11+, Node.js 20+, PostgreSQL 14+
 
-**Langkah 1 — Setup database PostgreSQL**
 ```bash
-# Buka psql sebagai superuser
+# 1. Setup database PostgreSQL
 psql -U postgres
+  CREATE DATABASE marlin_db;
+  CREATE USER knmp_user WITH PASSWORD 'knmp_secure_password';
+  GRANT ALL PRIVILEGES ON DATABASE marlin_db TO knmp_user;
+  \q
 
-# Di dalam psql, jalankan:
-CREATE DATABASE knmp_monitor;
-CREATE USER knmp_user WITH PASSWORD 'knmp_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE knmp_monitor TO knmp_user;
-\q
-```
-
-**Langkah 2 — Setup Backend**
-```bash
+# 2. Setup Backend
 cd backend
-
-# Buat file .env
-cp .env.example .env
-# Edit .env: sesuaikan DATABASE_URL jika berbeda
-
-# Install dependencies
+cp .env.example .env          # Edit jika perlu
 pip install -r requirements.txt
-
-# Buat semua tabel + isi data awal
-python seed.py
-
-# Jalankan server
+python seed.py                # Buat tabel + isi data awal
 uvicorn main:app --reload --port 8000
-```
 
-Backend berjalan di: http://localhost:8000
-API docs: http://localhost:8000/api/docs
-
-**Langkah 3 — Setup Frontend**
-```bash
-# Buka terminal baru
+# 3. Setup Frontend (terminal baru)
 cd frontend
-
-# Install dependencies
 npm install
-
-# Jalankan dev server
 npm run dev
 ```
 
-Frontend berjalan di: http://localhost:5173
-
-**Login pertama:**
-- Email: `admin@knmp.id`
-- Password: `Admin@123!`
+- Backend  : http://localhost:8000
+- API Docs : http://localhost:8000/api/docs
+- Frontend : http://localhost:5173
+- Login    : admin@marlin.id / Admin@123!
 
 ---
 
-### METODE B — Docker Compose (Recommended untuk Team)
-
-**Prasyarat:** Docker Desktop terinstall
+### METODE B — Docker Compose (Recommended)
 
 ```bash
-# 1. Clone / copy project ke folder lokal
-cd knmp-monitor
-
-# 2. Buat file .env di root
+# 1. Buat file .env di root project
 cat > .env << 'EOF'
-DB_PASSWORD=knmp_secure_password_2024
+DB_PASSWORD=marlin_secure_2024
 SECRET_KEY=ganti-dengan-random-string-32-karakter-minimum
 DEBUG=false
 EOF
 
-# 3. Jalankan semua service
+# 2. Jalankan semua service
 docker-compose up --build -d
 
-# 4. Seed database (jalankan sekali)
+# 3. Seed database (jalankan sekali)
 docker-compose exec backend python seed.py
 
-# 5. Cek status
+# 4. Cek status
 docker-compose ps
-docker-compose logs -f backend
 ```
 
-Akses aplikasi: http://localhost
+Akses: http://localhost
 
 ---
 
-### METODE C — Deploy ke Railway (Cloud, Gratis / Murah)
+### METODE C — Deploy Railway (Cloud)
 
-Railway adalah platform cloud yang paling mudah untuk deploy tanpa perlu manage server.
-
-**Langkah 1 — Persiapan**
-1. Daftar akun di https://railway.app (bisa login dengan GitHub)
-2. Upload project ke GitHub (buat repo baru, push semua file)
-
-**Langkah 2 — Deploy Database**
-1. Di Railway dashboard, klik **"New Project"**
-2. Pilih **"Provision PostgreSQL"**
-3. Salin nilai `DATABASE_URL` dari tab Variables
-
-**Langkah 3 — Deploy Backend**
-1. Di project yang sama, klik **"New Service" → "GitHub Repo"**
-2. Pilih repo kamu, set **Root Directory** = `backend`
-3. Di tab **Variables**, tambahkan:
-   ```
-   DATABASE_URL = [nilai dari PostgreSQL tadi]
-   SECRET_KEY   = [random string 32 karakter]
-   PORT         = 8000
-   ```
-4. Di tab **Settings → Deploy**, pastikan Start Command:
-   ```
-   uvicorn main:app --host 0.0.0.0 --port $PORT
-   ```
-5. Setelah deploy selesai, buka terminal Railway dan jalankan:
-   ```
-   python seed.py
-   ```
-
-**Langkah 4 — Deploy Frontend**
-1. Tambah service baru dari GitHub Repo yang sama
-2. Set **Root Directory** = `frontend`
-3. Di tab **Variables**, tambahkan:
-   ```
-   VITE_API_URL = https://[url-backend-railway-kamu]
-   ```
-4. Build Command: `npm install && npm run build`
-5. Start Command: `npx serve dist -p $PORT`
-
-**Langkah 5 — Update API URL di Frontend**
-
-Buka `frontend/src/utils/api.js`, ubah:
-```js
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
-  ...
-})
-```
-
-**Langkah 6 — Akses Aplikasi**
-- Railway akan memberikan URL otomatis seperti `https://knmp-frontend.up.railway.app`
-- Login: `admin@knmp.id` / `Admin@123!`
-
----
-
-## CARA PAKAI APLIKASI
-
-### 1. Setup Awal (Lakukan Sekali)
-
-```
-Dashboard → Kontrak → Tambah Perusahaan (lewat API docs atau menu)
-         → Tambah PPK
-         → Tambah Kontrak Baru
-         → Tambah Lokasi dalam kontrak
-         → Tambah Fasilitas dalam lokasi
-         → Tambah Item BOQ untuk setiap fasilitas
-```
-
-### 2. Input Laporan Mingguan
-
-**Cara A — Import Excel (Otomatis)**
-1. Buka menu **Laporan Mingguan**
-2. Pilih kontrak
-3. Klik **Import Excel**
-4. Drag & drop file Excel dari konsultan (format KNMP)
-5. Sistem akan otomatis parse: minggu, periode, progress planned/actual, hambatan
-
-**Cara B — Input Manual**
-1. Buka menu **Laporan Mingguan**
-2. Klik **Input Manual**
-3. Isi form: minggu, periode, progress rencana (%), progress aktual (%), tenaga kerja, hambatan
-4. Klik **Simpan Laporan**
-
-### 3. Lihat Kurva S
-1. Buka menu **Kurva S**
-2. Pilih kontrak dari dropdown
-3. Grafik otomatis terbentuk dari data laporan yang sudah diinput
-4. Garis biru putus-putus = Rencana
-5. Garis hijau = Realisasi
-6. Bar hijau/merah = Deviasi positif/negatif
-7. Garis oranye putus-putus = Titik addendum berlaku
-
-### 4. Catat Addendum
-1. Buka detail kontrak
-2. Klik **Addendum**
-3. Isi: nomor addendum, jenis (CCO/perpanjangan/nilai), tanggal berlaku
-4. Sistem otomatis update durasi/nilai kontrak dan tandai titik di kurva S
-
-### 5. Monitor Early Warning
-1. Buka menu **Early Warning**
-2. Warning otomatis muncul saat:
-   - Deviasi < -5% (Waspada) atau < -10% (Kritis)
-   - SPI < 0.92 (Waspada) atau < 0.85 (Kritis)
-   - Rasio sisa pekerjaan vs sisa waktu tidak seimbang
-3. Klik **Detail Kontrak** untuk drill-down
-4. Klik **Selesai** untuk resolve warning yang sudah ditangani
+1. Push repo ke GitHub
+2. Di railway.app → New Project → Provision PostgreSQL
+3. New Service → GitHub Repo → Root Dir: `backend`
+   - Variables: `DATABASE_URL`, `SECRET_KEY=random32char`, `PORT=8000`
+   - Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. New Service → GitHub Repo → Root Dir: `frontend`
+   - Variables: `VITE_API_URL=https://[backend-url]`
+   - Build: `npm install && npm run build`
+   - Start: `npx serve dist -p $PORT`
+5. Buka Railway terminal backend → `python seed.py`
 
 ---
 
@@ -224,9 +99,13 @@ companies ──< contracts >── ppk
                 ├──< contract_addenda
                 ├──< weekly_reports >──< weekly_progress_items
                 └──< locations >──< facilities >──< boq_items
-                                                      │
-                                              boq_item_versions
-                                              (history addendum)
+                                       │                │
+                                  boq_import_logs   boq_item_versions
+                                                    (history addendum)
+
+master_work_codes ──< boq_items
+boq_excel_templates (template format per kontraktor)
+early_warnings (warning per kontrak)
 ```
 
 ---
@@ -234,51 +113,85 @@ companies ──< contracts >── ppk
 ## STRUKTUR FILE
 
 ```
-knmp-monitor/
+marlin/
+├── docker-compose.yml
+├── .env.example
+├── README.md
 ├── backend/
 │   ├── app/
-│   │   ├── api/          # Route handlers
-│   │   ├── core/         # Config, DB, Security
-│   │   ├── models/       # SQLAlchemy models
-│   │   ├── schemas/      # Pydantic schemas
-│   │   └── services/     # Business logic (progress, excel)
-│   ├── main.py           # FastAPI entry point
-│   ├── seed.py           # Data awal + admin user
-│   └── requirements.txt
+│   │   ├── api/
+│   │   │   ├── auth.py
+│   │   │   ├── contracts.py
+│   │   │   ├── reports.py
+│   │   │   ├── dashboard.py
+│   │   │   └── deps.py
+│   │   ├── core/
+│   │   │   ├── config.py
+│   │   │   ├── database.py
+│   │   │   └── security.py
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   └── models.py
+│   │   ├── schemas/
+│   │   │   └── schemas.py
+│   │   └── services/
+│   │       ├── progress_service.py
+│   │       ├── excel_service.py
+│   │       └── boq_parser.py        ← BOQ Excel universal parser
+│   ├── main.py
+│   ├── seed.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── .env.example
 └── frontend/
-    └── src/
-        ├── components/   # UI components, charts, layout
-        ├── pages/        # Halaman aplikasi
-        ├── store/        # Zustand state management
-        └── utils/        # API client, formatters
+    ├── src/
+    │   ├── components/
+    │   ├── pages/
+    │   ├── store/
+    │   └── utils/
+    ├── package.json
+    ├── vite.config.js
+    └── Dockerfile
 ```
 
 ---
 
-## PENGEMBANGAN LANJUTAN (Roadmap)
+## CARA PAKAI
 
-- [ ] **Fase 2**: BOQ import dari Excel (bulk upload item BOQ langsung dari dokumen)
-- [ ] **Fase 3**: Progress input per-item BOQ (bukan hanya header %)
-- [ ] **Fase 4**: Notifikasi WhatsApp / Email saat early warning
-- [ ] **Fase 5**: Laporan PDF otomatis
-- [ ] **Fase 6**: Map view 200 lokasi dengan status warna
-- [ ] **Fase 7**: Multi-tenant / role per PPK / per konsultan
+### 1. Setup Awal (sekali)
+```
+Dashboard → Kontrak → Tambah Perusahaan
+         → Tambah PPK
+         → Tambah Kontrak
+         → Tambah Lokasi
+         → Tambah Fasilitas
+         → Import BOQ dari Excel (atau input manual)
+```
+
+### 2. Input Laporan Mingguan
+- **Import Excel** : Menu Laporan → Import Excel → upload file konsultan
+- **Manual**       : Menu Laporan → Input Manual → isi form
+
+### 3. Monitor S-Curve
+Menu Kurva S → pilih kontrak → grafik planned vs aktual + deviasi + titik addendum
+
+### 4. Catat Addendum / CCO
+Detail Kontrak → Addendum → isi nomor, jenis, tanggal → sistem update otomatis
+
+### 5. Early Warning
+Menu Early Warning → warning otomatis muncul saat:
+- Deviasi < -5% (Waspada) atau < -10% (Kritis)
+- SPI < 0.92 (Waspada) atau < 0.85 (Kritis)
+- Tidak ada laporan 2+ minggu
 
 ---
 
 ## TROUBLESHOOTING
 
-**"Cannot connect to database"**
-→ Pastikan PostgreSQL berjalan dan DATABASE_URL di .env sudah benar
-
-**"Import Excel gagal"**
-→ Pastikan format file adalah .xlsx (bukan .xls atau .csv)
-→ File harus format laporan konsultan standar KNMP
-
-**"Token expired / 401"**
-→ Logout dan login kembali
-→ Atau hapus localStorage di browser
-
-**Frontend tidak bisa connect ke backend**
-→ Pastikan backend berjalan di port 8000
-→ Cek vite.config.js: proxy sudah mengarah ke http://localhost:8000
+| Error | Solusi |
+|---|---|
+| Cannot connect to database | Cek PostgreSQL jalan & DATABASE_URL di .env |
+| Import Excel gagal | Pastikan format .xlsx, bukan .xls atau .csv |
+| Token expired / 401 | Logout dan login kembali |
+| Frontend tidak connect backend | Cek vite.config.js proxy → http://localhost:8000 |
+| Module not found | Jalankan `pip install -r requirements.txt` ulang |
