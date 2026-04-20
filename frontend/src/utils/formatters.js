@@ -1,76 +1,40 @@
-import { format, parseISO } from 'date-fns'
-import { id } from 'date-fns/locale'
-
-export const fmtCurrency = (v) => {
-  if (!v && v !== 0) return '-'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)} M`
-  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
+/** Format angka ke Rupiah singkat: 9.5M, 1.2B */
+export function fmtCurrency(val, full = false) {
+  const n = Number(val) || 0
+  if (full) return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
+  if (n >= 1e12) return `Rp ${(n / 1e12).toFixed(2)}T`
+  if (n >= 1e9)  return `Rp ${(n / 1e9).toFixed(2)}M`   // Miliar
+  if (n >= 1e6)  return `Rp ${(n / 1e6).toFixed(1)}jt`  // Juta
+  return `Rp ${n.toLocaleString('id-ID')}`
 }
 
-export const fmtPct = (v, decimals = 2) => {
-  if (v === null || v === undefined) return '-'
-  return `${Number(v).toFixed(decimals)}%`
+/** Format desimal (0.4567) → "45.67%" */
+export function fmtPct(val, decimals = 2) {
+  const n = Number(val) || 0
+  // Jika sudah dalam bentuk persen (> 1), tidak perlu dikali 100
+  const pct = n > 1 ? n : n * 100
+  return `${pct.toFixed(decimals)}%`
 }
 
-export const fmtDate = (v) => {
-  if (!v) return '-'
-  try { return format(typeof v === 'string' ? parseISO(v) : v, 'dd MMM yyyy', { locale: id }) }
-  catch { return v }
+/** Format tanggal ISO ke DD/MM/YYYY */
+export function fmtDate(val) {
+  if (!val) return '—'
+  try {
+    return new Date(val).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch { return val }
 }
 
-export const fmtNumber = (v, decimals = 2) => {
-  if (v === null || v === undefined) return '-'
-  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: decimals }).format(Number(v))
+/** Format angka dengan separator ribuan */
+export function fmtNumber(val, decimals = 0) {
+  return Number(val || 0).toLocaleString('id-ID', { maximumFractionDigits: decimals })
 }
 
-export const deviationColor = (dev) => {
-  const n = Number(dev)
-  if (n > 5)   return 'text-green-600'
-  if (n >= -5) return 'text-yellow-600'
-  if (n >= -10) return 'text-orange-600'
-  return 'text-red-600'
+/** Label teks untuk deviation status */
+export function deviationLabel(status) {
+  return { fast: 'Cepat', normal: 'Normal', warning: 'Waspada', critical: 'Kritis' }[status] || status
 }
 
-export const deviationBadge = (status) => {
-  const map = {
-    fast: 'badge-green',
-    normal: 'badge-blue',
-    warning: 'badge-yellow',
-    critical: 'badge-red',
-  }
-  return map[status] || 'badge-gray'
-}
-
-export const deviationLabel = (status) => {
-  const map = {
-    fast: 'Cepat',
-    normal: 'Normal',
-    warning: 'Waspada',
-    critical: 'Kritis',
-  }
-  return map[status] || status || '-'
-}
-
-export const contractStatusBadge = (status) => {
-  const map = {
-    active: 'badge-blue',
-    addendum: 'badge-yellow',
-    completed: 'badge-green',
-    terminated: 'badge-red',
-    draft: 'badge-gray',
-  }
-  return map[status] || 'badge-gray'
-}
-
-export const contractStatusLabel = (status) => {
-  const map = {
-    active: 'Aktif',
-    addendum: 'Addendum',
-    completed: 'Selesai',
-    terminated: 'Dihentikan',
-    draft: 'Draft',
-  }
-  return map[status] || status
+/** Tailwind CSS class untuk badge deviation */
+export function deviationBadge(status) {
+  return { fast: 'badge-green', normal: 'badge-blue', warning: 'badge-yellow', critical: 'badge-red' }[status] || 'badge-gray'
 }

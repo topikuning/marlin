@@ -4,9 +4,11 @@ import useAuthStore from './store/authStore'
 import AppShell from './components/layout/AppShell'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import MasterDataPage from './pages/MasterDataPage'
+import ContractsPage from './pages/ContractsPage'
+import ContractDetailPage from './pages/ContractDetailPage'
 import SCurvePage from './pages/SCurvePage'
 import ReportsPage from './pages/ReportsPage'
-import { ContractsListPage, ContractDetailPage } from './pages/ContractPages'
 import WarningsPage from './pages/WarningsPage'
 
 function PrivateRoute({ children }) {
@@ -21,20 +23,21 @@ export default function App() {
       <Toaster
         position="top-right"
         toastOptions={{
-          duration: 3000,
-          style: { fontSize: '13px', borderRadius: '10px', boxShadow: '0 4px 12px rgb(0 0 0 / 0.1)' },
+          duration: 3500,
+          style: { fontSize: '13px', borderRadius: '10px', boxShadow: '0 4px 12px rgb(0 0 0 / 0.12)' },
           success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
-          error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+          error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
         }}
       />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-        <Route path="/contracts" element={<PrivateRoute><ContractsListPage /></PrivateRoute>} />
-        <Route path="/contracts/:id" element={<PrivateRoute><ContractDetailPage /></PrivateRoute>} />
-        <Route path="/reports" element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
-        <Route path="/scurve" element={<PrivateRoute><SCurvePage /></PrivateRoute>} />
-        <Route path="/warnings" element={<PrivateRoute><WarningsPage /></PrivateRoute>} />
+        <Route path="/"               element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
+        <Route path="/master"         element={<PrivateRoute><MasterDataPage /></PrivateRoute>} />
+        <Route path="/contracts"      element={<PrivateRoute><ContractsPage /></PrivateRoute>} />
+        <Route path="/contracts/:id"  element={<PrivateRoute><ContractDetailPage /></PrivateRoute>} />
+        <Route path="/reports"        element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
+        <Route path="/scurve"         element={<PrivateRoute><SCurvePage /></PrivateRoute>} />
+        <Route path="/warnings"       element={<PrivateRoute><WarningsPage /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
