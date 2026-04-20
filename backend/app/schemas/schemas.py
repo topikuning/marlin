@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -30,6 +30,16 @@ class UserCreate(BaseModel):
     password: str
     role: UserRole = UserRole.VIEWER
     phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[UserRole] = None
+    phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -37,7 +47,8 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: UserRole
-    phone: Optional[str]
+    phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
     is_active: bool
     created_at: datetime
 
@@ -116,6 +127,8 @@ class ContractCreate(BaseModel):
     end_date: date
     duration_days: int
     original_value: Decimal
+    province: Optional[str] = None
+    city: Optional[str] = None
     description: Optional[str] = None
 
 
@@ -132,10 +145,10 @@ class ContractOut(BaseModel):
     original_value: Decimal
     current_value: Decimal
     status: ContractStatus
-    description: Optional[str]
+    province: Optional[str] = None
+    city: Optional[str] = None
+    description: Optional[str] = None
     created_at: datetime
-    company: Optional[CompanyOut] = None
-    ppk: Optional[PPKOut] = None
 
     class Config:
         from_attributes = True
@@ -156,7 +169,7 @@ class AddendumCreate(BaseModel):
 
 class AddendumOut(AddendumCreate):
     id: UUID
-    old_contract_value: Optional[Decimal]
+    old_contract_value: Optional[Decimal] = None
     created_at: datetime
 
     class Config:
@@ -181,7 +194,6 @@ class LocationOut(LocationCreate):
     id: UUID
     is_active: bool
     created_at: datetime
-    facilities: List["FacilitySummary"] = []
 
     class Config:
         from_attributes = True
@@ -225,6 +237,7 @@ class BOQItemCreate(BaseModel):
     original_code: Optional[str] = None
     parent_code: Optional[str] = None
     level: int = 1
+    sort_order: int = 0
     description: str
     unit: Optional[str] = None
     volume: Decimal = Decimal("0")
@@ -234,25 +247,27 @@ class BOQItemCreate(BaseModel):
     planned_start_week: Optional[int] = None
     planned_duration_weeks: Optional[int] = None
     planned_end_week: Optional[int] = None
+    notes: Optional[str] = None
     is_addendum_item: bool = False
 
 
 class BOQItemOut(BaseModel):
     id: UUID
     facility_id: UUID
-    master_work_code: Optional[str]
-    original_code: Optional[str]
-    parent_code: Optional[str]
+    master_work_code: Optional[str] = None
+    original_code: Optional[str] = None
+    parent_code: Optional[str] = None
     level: int
+    sort_order: int = 0
     description: str
-    unit: Optional[str]
+    unit: Optional[str] = None
     volume: Decimal
     unit_price: Decimal
     total_price: Decimal
     weight_pct: Decimal
-    planned_start_week: Optional[int]
-    planned_duration_weeks: Optional[int]
-    planned_end_week: Optional[int]
+    planned_start_week: Optional[int] = None
+    planned_duration_weeks: Optional[int] = None
+    planned_end_week: Optional[int] = None
     version: int
     is_active: bool
     is_addendum_item: bool
@@ -277,20 +292,19 @@ class BOQItemUpdate(BaseModel):
 # ─── WEEKLY REPORT ────────────────────────────────────────────────────────────
 
 class WeeklyProgressItemCreate(BaseModel):
-    boq_item_id: UUID
-    volume_this_week: Decimal = Decimal("0")
-    volume_cumulative: Decimal = Decimal("0")
+    boq_item_id: str            # string — hindari UUID parse error dari frontend
+    volume_this_week: float = 0.0
+    volume_cumulative: float = 0.0
     notes: Optional[str] = None
 
 
 class WeeklyReportCreate(BaseModel):
-    contract_id: UUID
     week_number: int
-    period_start: date
-    period_end: date
-    report_date: Optional[date] = None
-    planned_weekly_pct: Optional[Decimal] = None
-    planned_cumulative_pct: Optional[Decimal] = None
+    period_start: str           # YYYY-MM-DD sebagai string
+    period_end: str
+    report_date: Optional[str] = None
+    planned_cumulative_pct: float = 0.0   # persen: 45.5 = 45.5%
+    actual_cumulative_pct: float = 0.0
     manpower_count: int = 0
     manpower_skilled: int = 0
     manpower_unskilled: int = 0
@@ -300,64 +314,61 @@ class WeeklyReportCreate(BaseModel):
     submitted_by: Optional[str] = None
     progress_items: List[WeeklyProgressItemCreate] = []
 
-
-class WeeklyProgressItemOut(BaseModel):
-    id: UUID
-    boq_item_id: UUID
-    boq_description: Optional[str] = None
-    boq_unit: Optional[str] = None
-    boq_weight_pct: Optional[Decimal] = None
-    volume_this_week: Decimal
-    volume_cumulative: Decimal
-    progress_this_week_pct: Decimal
-    progress_cumulative_pct: Decimal
-    weighted_progress_pct: Decimal
-
-    class Config:
-        from_attributes = True
+    @field_validator("period_start", "period_end", "report_date", mode="before")
+    @classmethod
+    def coerce_date(cls, v):
+        if v is None:
+            return v
+        return str(v)[:10]
 
 
-class WeeklyReportOut(BaseModel):
-    id: UUID
-    contract_id: UUID
-    week_number: int
-    period_start: date
-    period_end: date
-    report_date: Optional[date]
-    planned_weekly_pct: Decimal
-    planned_cumulative_pct: Decimal
-    actual_weekly_pct: Decimal
-    actual_cumulative_pct: Decimal
-    deviation_pct: Decimal
-    deviation_status: DeviationStatus
-    days_elapsed: int
-    days_remaining: int
-    spi: Optional[Decimal]
-    manpower_count: int
-    rain_days: int
-    obstacles: Optional[str]
-    solutions: Optional[str]
-    submitted_by: Optional[str]
-    import_source: str
-    is_locked: bool
-    created_at: datetime
-    progress_items: List[WeeklyProgressItemOut] = []
+# ─── DAILY REPORT ─────────────────────────────────────────────────────────────
 
-    class Config:
-        from_attributes = True
+class DailyReportCreate(BaseModel):
+    location_id: str
+    report_date: str
+    description: str
+    weather: Optional[str] = None
+    manpower_count: int = 0
+    submitted_by: Optional[str] = None
+
+    @field_validator("report_date", mode="before")
+    @classmethod
+    def coerce_date(cls, v):
+        return str(v)[:10] if v else v
 
 
-# ─── S-CURVE DATA ─────────────────────────────────────────────────────────────
+# ─── PAYMENT TERM ─────────────────────────────────────────────────────────────
+
+class PaymentTermCreate(BaseModel):
+    contract_id: str
+    term_number: int
+    term_name: str
+    percentage: float
+    amount: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class PaymentTermUpdate(BaseModel):
+    status: Optional[str] = None
+    submitted_date: Optional[str] = None
+    approved_date: Optional[str] = None
+    paid_date: Optional[str] = None
+    reviewer_notes: Optional[str] = None
+    amount_paid: Optional[float] = None
+
+
+# ─── S-CURVE ──────────────────────────────────────────────────────────────────
 
 class SCurvePoint(BaseModel):
     week: int
-    period_start: Optional[date]
-    period_end: Optional[date]
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
     planned_cumulative: float
-    actual_cumulative: Optional[float]
-    deviation: Optional[float]
-    deviation_status: Optional[str]
-    spi: Optional[float]
+    actual_cumulative: Optional[float] = None
+    deviation: Optional[float] = None
+    deviation_status: Optional[str] = None
+    spi: Optional[float] = None
 
 
 class SCurveResponse(BaseModel):
@@ -369,41 +380,20 @@ class SCurveResponse(BaseModel):
     latest_actual: float
     latest_planned: float
     latest_deviation: float
-    forecast_completion_week: Optional[int]
-    forecast_delay_days: Optional[int]
+    forecast_completion_week: Optional[int] = None
+    forecast_delay_days: Optional[int] = None
     points: List[SCurvePoint]
-    addendum_weeks: List[int] = []  # Minggu ke berapa addendum berlaku
+    addendum_weeks: List[int] = []
 
 
-# ─── DASHBOARD SUMMARY ────────────────────────────────────────────────────────
-
-class ContractSummary(BaseModel):
-    id: str
-    contract_number: str
-    contract_name: str
-    company_name: str
-    ppk_name: str
-    city: Optional[str]
-    province: Optional[str]
-    current_week: int
-    total_weeks: int
-    actual_cumulative: float
-    planned_cumulative: float
-    deviation: float
-    deviation_status: str
-    spi: Optional[float]
-    days_remaining: int
-    location_count: int
-    facility_count: int
-    contract_value: float
-    has_active_warning: bool
-
+# ─── DASHBOARD ────────────────────────────────────────────────────────────────
 
 class DashboardStats(BaseModel):
     total_contracts: int
     total_locations: int
     total_value: float
     avg_progress: float
+    avg_planned: float = 0.0
     contracts_on_track: int
     contracts_warning: int
     contracts_critical: int
@@ -419,9 +409,9 @@ class EarlyWarningOut(BaseModel):
     warning_type: str
     severity: str
     message: str
-    parameter_name: Optional[str]
-    parameter_value: Optional[Decimal]
-    threshold_value: Optional[Decimal]
+    parameter_name: Optional[str] = None
+    parameter_value: Optional[Decimal] = None
+    threshold_value: Optional[Decimal] = None
     is_resolved: bool
     created_at: datetime
 
@@ -433,9 +423,9 @@ class EarlyWarningOut(BaseModel):
 
 class ExcelImportResult(BaseModel):
     success: bool
-    contract_id: Optional[str]
-    week_number: Optional[int]
-    items_imported: int
-    items_skipped: int
+    contract_id: Optional[str] = None
+    week_number: Optional[int] = None
+    items_imported: int = 0
+    items_skipped: int = 0
     warnings: List[str] = []
     errors: List[str] = []
