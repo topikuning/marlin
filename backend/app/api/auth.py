@@ -24,7 +24,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             "id":    str(user.id),
             "email": user.email,
             "name":  user.full_name,
-            "role":  user.role.value,   # ← .value penting: kirim string, bukan Enum object
+            "role":  user.role.value,   #value penting: kirim string, bukan Enum object
         },
     )
 
