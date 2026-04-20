@@ -1,38 +1,119 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List, Optional
 from decimal import Decimal
+from datetime import date
 import tempfile, os
-from datetime import date, timedelta
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.models import (
     WeeklyReport, WeeklyProgressItem, BOQItem,
-    Facility, Location, Contract, DeviationStatus
+    Contract, DeviationStatus, UserRole
 )
-from app.schemas.schemas import WeeklyReportCreate, WeeklyReportOut, ExcelImportResult
+from app.schemas.schemas import WeeklyReportCreate, ExcelImportResult
 from app.services.progress_service import (
-    get_deviation_status, calculate_spi,
-    update_progress_item_calculations, run_early_warning_check
+    get_deviation_status, calculate_spi, run_early_warning_check
 )
 from app.services.excel_service import parse_progress_xlsx
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("/{contract_id}", response_model=List[dict])
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+def _parse_date(s):
+    if not s:
+        return None
+    if isinstance(s, date):
+        return s
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except Exception:
+        return None
+
+
+def _pct_to_decimal(v):
+    """Konversi persen (45.5) ke desimal (0.455). Toleran terhadap kedua format."""
+    v = float(v or 0)
+    return Decimal(str(v / 100)) if v > 1 else Decimal(str(v))
+
+
+def _report_dict(r: WeeklyReport, detail: bool = False) -> dict:
+    d = {
+        "id":                     str(r.id),
+        "contract_id":            str(r.contract_id),
+        "week_number":            r.week_number,
+        "period_start":           str(r.period_start),
+        "period_end":             str(r.period_end),
+        "report_date":            str(r.report_date) if r.report_date else None,
+        "planned_cumulative_pct": float(r.planned_cumulative_pct or 0) * 100,
+        "actual_cumulative_pct":  float(r.actual_cumulative_pct  or 0) * 100,
+        "planned_weekly_pct":     float(r.planned_weekly_pct     or 0) * 100,
+        "actual_weekly_pct":      float(r.actual_weekly_pct      or 0) * 100,
+        "deviation_pct":          float(r.deviation_pct          or 0) * 100,
+        "deviation_status":       r.deviation_status.value if hasattr(r.deviation_status, "value") else r.deviation_status,
+        "spi":                    float(r.spi or 0),
+        "days_elapsed":           r.days_elapsed or 0,
+        "days_remaining":         r.days_remaining or 0,
+        "manpower_count":         r.manpower_count or 0,
+        "manpower_skilled":       r.manpower_skilled or 0,
+        "manpower_unskilled":     r.manpower_unskilled or 0,
+        "rain_days":              r.rain_days or 0,
+        "obstacles":              r.obstacles,
+        "solutions":              r.solutions,
+        "submitted_by":           r.submitted_by,
+        "import_source":          r.import_source or "manual",
+        "is_locked":              r.is_locked or False,
+        "photos":                 [
+            {"id": str(p.id), "file_path": p.file_path, "caption": p.caption}
+            for p in (r.photos or [])
+        ],
+        "created_at":             str(r.created_at),
+    }
+    if detail:
+        d["items"] = [{
+            "boq_item_id":             str(pi.boq_item_id),
+            "description":             pi.boq_item.description if pi.boq_item else "",
+            "unit":                    pi.boq_item.unit if pi.boq_item else "",
+            "volume":                  float(pi.boq_item.volume or 0) if pi.boq_item else 0,
+            "weight_pct":              float(pi.boq_item.weight_pct or 0) * 100 if pi.boq_item else 0,
+            "volume_this_week":        float(pi.volume_this_week or 0),
+            "volume_cumulative":       float(pi.volume_cumulative or 0),
+            "progress_cumulative_pct": float(pi.progress_cumulative_pct or 0) * 100,
+        } for pi in (r.progress_items or [])]
+    return d
+
+
+# ─── ENDPOINTS ────────────────────────────────────────────────────────────────
+
+@router.get("/{contract_id}")
 def list_reports(
     contract_id: str,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    reports = db.query(WeeklyReport).filter(
+    rows = db.query(WeeklyReport).filter(
         WeeklyReport.contract_id == contract_id
-    ).order_by(WeeklyReport.week_number).all()
-    return [_report_to_dict(r) for r in reports]
+    ).order_by(WeeklyReport.week_number.desc()).all()
+    return [_report_dict(r) for r in rows]
 
 
-@router.post("/{contract_id}", response_model=dict)
+@router.get("/{contract_id}/week/{week_number}")
+def get_report(
+    contract_id: str,
+    week_number: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    r = db.query(WeeklyReport).filter(
+        WeeklyReport.contract_id == contract_id,
+        WeeklyReport.week_number == week_number,
+    ).first()
+    if not r:
+        raise HTTPException(404, "Laporan tidak ditemukan")
+    return _report_dict(r, detail=True)
+
+
+@router.post("/{contract_id}")
 def create_report(
     contract_id: str,
     data: WeeklyReportCreate,
@@ -40,35 +121,56 @@ def create_report(
     current_user=Depends(get_current_user),
 ):
     # Cek duplikat
-    existing = db.query(WeeklyReport).filter(
+    if db.query(WeeklyReport).filter(
         WeeklyReport.contract_id == contract_id,
         WeeklyReport.week_number == data.week_number,
-    ).first()
-    if existing:
+    ).first():
         raise HTTPException(400, f"Laporan minggu {data.week_number} sudah ada")
 
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(404, "Kontrak tidak ditemukan")
 
-    # Hitung waktu
-    days_elapsed = (data.period_end - contract.start_date).days + 1 if contract.start_date else 0
-    days_remaining = (contract.end_date - data.period_end).days if contract.end_date else 0
+    ps = _parse_date(data.period_start)
+    pe = _parse_date(data.period_end)
+    if not ps or not pe:
+        raise HTTPException(422, "Format tanggal tidak valid. Gunakan YYYY-MM-DD")
+
+    days_elapsed   = max(0, (pe - contract.start_date).days + 1) if contract.start_date else 0
+    days_remaining = max(0, (contract.end_date - pe).days)       if contract.end_date   else 0
+
+    planned_dec = _pct_to_decimal(data.planned_cumulative_pct)
+    actual_dec  = _pct_to_decimal(data.actual_cumulative_pct)
+
+    # Weekly = kumulatif dikurangi minggu sebelumnya
+    prev = db.query(WeeklyReport).filter(
+        WeeklyReport.contract_id == contract_id,
+        WeeklyReport.week_number == data.week_number - 1,
+    ).first()
+    prev_actual  = Decimal(str(prev.actual_cumulative_pct  or 0)) if prev else Decimal("0")
+    prev_planned = Decimal(str(prev.planned_cumulative_pct or 0)) if prev else Decimal("0")
+
+    deviation = float(actual_dec) - float(planned_dec)
 
     report = WeeklyReport(
         contract_id=contract_id,
         week_number=data.week_number,
-        period_start=data.period_start,
-        period_end=data.period_end,
-        report_date=data.report_date or data.period_end,
-        planned_weekly_pct=data.planned_weekly_pct or Decimal("0"),
-        planned_cumulative_pct=data.planned_cumulative_pct or Decimal("0"),
+        period_start=ps,
+        period_end=pe,
+        report_date=_parse_date(data.report_date) or pe,
+        planned_cumulative_pct=planned_dec,
+        actual_cumulative_pct=actual_dec,
+        planned_weekly_pct=planned_dec - prev_planned,
+        actual_weekly_pct=actual_dec  - prev_actual,
+        deviation_pct=Decimal(str(deviation)),
+        deviation_status=get_deviation_status(deviation),
+        spi=Decimal(str(calculate_spi(float(actual_dec), float(planned_dec)) or 0)),
         days_elapsed=days_elapsed,
         days_remaining=days_remaining,
-        manpower_count=data.manpower_count,
-        manpower_skilled=data.manpower_skilled,
-        manpower_unskilled=data.manpower_unskilled,
-        rain_days=data.rain_days,
+        manpower_count=data.manpower_count or 0,
+        manpower_skilled=data.manpower_skilled or 0,
+        manpower_unskilled=data.manpower_unskilled or 0,
+        rain_days=data.rain_days or 0,
         obstacles=data.obstacles,
         solutions=data.solutions,
         submitted_by=data.submitted_by or current_user.full_name,
@@ -77,75 +179,89 @@ def create_report(
     db.add(report)
     db.flush()
 
-    # Simpan progress items
-    actual_weighted_cumulative = Decimal("0")
+    # Progress items per BOQ item
     for item_data in data.progress_items:
-        boq_item = db.query(BOQItem).filter(BOQItem.id == item_data.boq_item_id).first()
-        if not boq_item:
+        boq = db.query(BOQItem).filter(BOQItem.id == item_data.boq_item_id).first()
+        if not boq:
             continue
-
-        pi = WeeklyProgressItem(
+        vol_plan = float(boq.volume or 0)
+        vol_cum  = float(item_data.volume_cumulative or 0)
+        vol_wk   = float(item_data.volume_this_week  or 0)
+        prog_cum = min(vol_cum / vol_plan, 1.0) if vol_plan > 0 else 0.0
+        prog_wk  = min(vol_wk  / vol_plan, 1.0) if vol_plan > 0 else 0.0
+        db.add(WeeklyProgressItem(
             weekly_report_id=str(report.id),
-            boq_item_id=str(item_data.boq_item_id),
-            volume_this_week=item_data.volume_this_week,
-            volume_cumulative=item_data.volume_cumulative,
+            boq_item_id=item_data.boq_item_id,
+            volume_this_week=Decimal(str(vol_wk)),
+            volume_cumulative=Decimal(str(vol_cum)),
+            progress_this_week_pct=Decimal(str(prog_wk)),
+            progress_cumulative_pct=Decimal(str(prog_cum)),
+            weighted_progress_pct=Decimal(str(prog_cum * float(boq.weight_pct or 0))),
             notes=item_data.notes,
-        )
-        pi = update_progress_item_calculations(db, pi, boq_item)
-        db.add(pi)
-        actual_weighted_cumulative += pi.weighted_progress_pct
-
-    # Update header report
-    report.actual_cumulative_pct = actual_weighted_cumulative
-    prev_report = db.query(WeeklyReport).filter(
-        WeeklyReport.contract_id == contract_id,
-        WeeklyReport.week_number == data.week_number - 1,
-    ).first()
-    prev_cumulative = prev_report.actual_cumulative_pct if prev_report else Decimal("0")
-    report.actual_weekly_pct = actual_weighted_cumulative - prev_cumulative
-
-    deviation = float(actual_weighted_cumulative) - float(report.planned_cumulative_pct)
-    report.deviation_pct = Decimal(str(deviation))
-    report.deviation_status = get_deviation_status(deviation)
-    report.spi = Decimal(str(calculate_spi(float(actual_weighted_cumulative), float(report.planned_cumulative_pct)) or 0))
+        ))
 
     db.commit()
-
-    # Jalankan early warning check
     run_early_warning_check(db, contract_id)
-
     return {"id": str(report.id), "week_number": report.week_number, "success": True}
 
 
-@router.get("/{contract_id}/week/{week_number}", response_model=dict)
-def get_report_detail(
+@router.put("/{contract_id}/week/{week_number}")
+def update_report(
     contract_id: str,
     week_number: int,
+    data: dict,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    report = db.query(WeeklyReport).filter(
+    r = db.query(WeeklyReport).filter(
         WeeklyReport.contract_id == contract_id,
         WeeklyReport.week_number == week_number,
     ).first()
-    if not report:
-        raise HTTPException(404, f"Laporan minggu {week_number} tidak ditemukan")
-    return _report_to_dict(report, detail=True)
+    if not r:
+        raise HTTPException(404, "Laporan tidak ditemukan")
+    if r.is_locked:
+        raise HTTPException(403, "Laporan sudah dikunci, tidak bisa diubah")
+    allowed = {"obstacles", "solutions", "manpower_count",
+               "manpower_skilled", "manpower_unskilled", "rain_days"}
+    for k, v in data.items():
+        if k in allowed:
+            setattr(r, k, v)
+    db.commit()
+    return {"success": True}
+
+
+@router.delete("/{contract_id}/week/{week_number}")
+def delete_report(
+    contract_id: str,
+    week_number: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.SUPERADMIN, UserRole.PPK):
+        raise HTTPException(403, "Hanya Superadmin atau PPK yang bisa hapus laporan")
+    r = db.query(WeeklyReport).filter(
+        WeeklyReport.contract_id == contract_id,
+        WeeklyReport.week_number == week_number,
+    ).first()
+    if not r:
+        raise HTTPException(404)
+    db.delete(r)
+    db.commit()
+    return {"success": True}
 
 
 @router.post("/{contract_id}/import-excel", response_model=ExcelImportResult)
-async def import_excel_report(
+async def import_excel(
     contract_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Import laporan progress dari file Excel konsultan."""
-    if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(400, "File harus berformat .xlsx atau .xls")
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(400, "Hanya file .xlsx yang diterima")
 
+    content = await file.read()
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
 
@@ -154,120 +270,59 @@ async def import_excel_report(
     finally:
         os.unlink(tmp_path)
 
-    if not parsed["success"] and parsed["errors"]:
-        return ExcelImportResult(
-            success=False,
-            errors=parsed["errors"],
-            warnings=parsed["warnings"],
-            items_imported=0,
-            items_skipped=0,
-        )
-
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(404, "Kontrak tidak ditemukan")
 
-    week_num = parsed.get("week_number")
+    week_num = int(parsed.get("week_number") or 0)
     if not week_num:
         return ExcelImportResult(
             success=False,
-            errors=["Nomor minggu tidak ditemukan dalam file"],
-            items_imported=0,
-            items_skipped=0,
+            errors=["Nomor minggu tidak ditemukan di file Excel"],
         )
 
-    # Cek duplikat
-    existing = db.query(WeeklyReport).filter(
+    if db.query(WeeklyReport).filter(
         WeeklyReport.contract_id == contract_id,
         WeeklyReport.week_number == week_num,
-    ).first()
-    if existing:
+    ).first():
         return ExcelImportResult(
             success=False,
-            errors=[f"Laporan minggu {week_num} sudah ada. Hapus dulu sebelum import ulang."],
-            items_imported=0,
-            items_skipped=0,
+            errors=[f"Laporan minggu {week_num} sudah ada"],
         )
 
-    period_start = parsed.get("period_start") or contract.start_date + timedelta(weeks=week_num - 1)
-    period_end = parsed.get("period_end") or period_start + timedelta(days=6)
+    pe = _parse_date(parsed.get("period_end")) or date.today()
+    ps = _parse_date(parsed.get("period_start")) or pe
 
-    days_elapsed = parsed.get("days_elapsed") or (period_end - contract.start_date).days
-    days_remaining = parsed.get("days_remaining") or (contract.end_date - period_end).days
+    actual_dec  = _pct_to_decimal(float(parsed.get("actual_cumulative_pct")  or 0) * 100)
+    planned_dec = _pct_to_decimal(float(parsed.get("planned_cumulative_pct") or 0) * 100)
+    deviation   = float(actual_dec) - float(planned_dec)
 
-    report = WeeklyReport(
+    r = WeeklyReport(
         contract_id=contract_id,
         week_number=week_num,
-        period_start=period_start,
-        period_end=period_end,
-        planned_weekly_pct=Decimal(str(parsed.get("planned_weekly_pct") or 0)),
-        planned_cumulative_pct=Decimal(str(parsed.get("planned_cumulative_pct") or 0)),
-        actual_weekly_pct=Decimal(str(parsed.get("actual_weekly_pct") or 0)),
-        actual_cumulative_pct=Decimal(str(parsed.get("actual_cumulative_pct") or 0)),
-        deviation_pct=Decimal(str(parsed.get("deviation_pct") or 0)),
-        days_elapsed=days_elapsed,
-        days_remaining=days_remaining,
-        manpower_count=parsed.get("manpower_count") or 0,
-        obstacles=parsed.get("obstacles") or "",
-        solutions=parsed.get("solutions") or "",
+        period_start=ps, period_end=pe, report_date=pe,
+        planned_cumulative_pct=planned_dec,
+        actual_cumulative_pct=actual_dec,
+        deviation_pct=Decimal(str(deviation)),
+        deviation_status=get_deviation_status(deviation),
+        spi=Decimal(str(calculate_spi(float(actual_dec), float(planned_dec)) or 0)),
+        days_elapsed=int(parsed.get("days_elapsed") or 0),
+        days_remaining=int(parsed.get("days_remaining") or 0),
+        manpower_count=int(parsed.get("manpower_count") or 0),
+        obstacles=str(parsed.get("obstacles") or ""),
+        solutions=str(parsed.get("solutions") or ""),
         submitted_by=current_user.full_name,
         import_source="excel_import",
         source_filename=file.filename,
     )
-    actual_pct = float(parsed.get("actual_cumulative_pct") or 0)
-    planned_pct = float(parsed.get("planned_cumulative_pct") or 0)
-    deviation = actual_pct - planned_pct
-    report.deviation_status = get_deviation_status(deviation)
-    report.spi = Decimal(str(calculate_spi(actual_pct, planned_pct) or 0))
-
-    db.add(report)
+    db.add(r)
     db.commit()
-    db.refresh(report)
-
     run_early_warning_check(db, contract_id)
 
     return ExcelImportResult(
         success=True,
         contract_id=contract_id,
         week_number=week_num,
-        items_imported=len(parsed.get("progress_items") or []),
-        items_skipped=0,
+        items_imported=0,
         warnings=parsed.get("warnings") or [],
-        errors=[],
     )
-
-
-def _report_to_dict(r: WeeklyReport, detail: bool = False) -> dict:
-    d = {
-        "id": str(r.id),
-        "week_number": r.week_number,
-        "period_start": str(r.period_start),
-        "period_end": str(r.period_end),
-        "planned_weekly_pct": float(r.planned_weekly_pct or 0),
-        "planned_cumulative_pct": float(r.planned_cumulative_pct or 0),
-        "actual_weekly_pct": float(r.actual_weekly_pct or 0),
-        "actual_cumulative_pct": float(r.actual_cumulative_pct or 0),
-        "deviation_pct": float(r.deviation_pct or 0),
-        "deviation_status": r.deviation_status,
-        "days_elapsed": r.days_elapsed,
-        "days_remaining": r.days_remaining,
-        "spi": float(r.spi or 0),
-        "manpower_count": r.manpower_count,
-        "rain_days": r.rain_days,
-        "obstacles": r.obstacles,
-        "solutions": r.solutions,
-        "import_source": r.import_source,
-        "submitted_by": r.submitted_by,
-        "created_at": str(r.created_at),
-    }
-    if detail and r.progress_items:
-        d["items"] = [{
-            "boq_item_id": str(pi.boq_item_id),
-            "description": pi.boq_item.description if pi.boq_item else "",
-            "unit": pi.boq_item.unit if pi.boq_item else "",
-            "weight_pct": float(pi.boq_item.weight_pct or 0) if pi.boq_item else 0,
-            "volume_this_week": float(pi.volume_this_week or 0),
-            "volume_cumulative": float(pi.volume_cumulative or 0),
-            "progress_cumulative_pct": float(pi.progress_cumulative_pct or 0),
-        } for pi in r.progress_items]
-    return d
