@@ -8,30 +8,24 @@ from app.schemas.schemas import Token, LoginRequest, UserCreate, UserOut
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_current_user(token: str, db: Session) -> User:
-    from app.core.security import decode_token
-    from fastapi.security import OAuth2PasswordBearer
-    payload = decode_token(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Token tidak valid")
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan")
-    return user
-
-
 @router.post("/login", response_model=Token)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email).first()
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email atau password salah"
+            detail="Email atau password salah",
         )
     token = create_access_token({"sub": user.email})
     return Token(
         access_token=token,
-        user={"id": str(user.id), "email": user.email, "name": user.full_name, "role": user.role}
+        token_type="bearer",
+        user={
+            "id":    str(user.id),
+            "email": user.email,
+            "name":  user.full_name,
+            "role":  user.role.value,   # ← .value penting: kirim string, bukan Enum object
+        },
     )
 
 
@@ -54,7 +48,7 @@ def register(req: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/setup-admin", response_model=UserOut)
 def setup_first_admin(req: UserCreate, db: Session = Depends(get_db)):
-    """Endpoint khusus setup admin pertama. Disable setelah setup."""
+    """Setup admin pertama. Otomatis disabled jika sudah ada user."""
     if db.query(User).count() > 0:
         raise HTTPException(status_code=403, detail="Admin sudah ada")
     user = User(
@@ -68,3 +62,12 @@ def setup_first_admin(req: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/me", response_model=UserOut)
+def get_me(db: Session = Depends(get_db), token: str = None):
+    """Cek user dari token aktif."""
+    from app.api.deps import get_current_user
+    from fastapi import Request
+    # Endpoint ini dipanggil lewat deps, bukan langsung
+    raise HTTPException(status_code=501, detail="Gunakan Authorization header")
